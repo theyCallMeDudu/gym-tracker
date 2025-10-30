@@ -1,0 +1,83 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: gt_db
+    environment:
+      MYSQL_DATABASE: gymtrack
+      MYSQL_USER: gymtrack
+      MYSQL_PASSWORD: gymtrack
+      MYSQL_ROOT_PASSWORD: root
+      TZ: America/Sao_Paulo
+    command: [
+      "--default-authentication-plugin=mysql_native_password",
+      "--innodb-buffer-pool-size=256M",
+      "--character-set-server=utf8mb4",
+      "--collation-server=utf8mb4_unicode_ci"
+    ]
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [gt_net]
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: gt_backend
+    working_dir: /var/www/html
+    volumes:
+      - ./gt-backend:/var/www/html
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: gymtrack
+      DB_USERNAME: gymtrack
+      DB_PASSWORD: gymtrack
+      TZ: America/Sao_Paulo
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [gt_net]
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: gt_nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gt-backend:/var/www/html
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      - backend
+    networks: [gt_net]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/node/Dockerfile
+    container_name: gt_frontend
+    working_dir: /app
+    command: sh -c "npm install && npm run start -- --host 0.0.0.0 --port 4200"
+    volumes:
+      - ./gt-frontend:/app
+    ports:
+      - "4200:4200"
+    environment:
+      TZ: America/Sao_Paulo
+    networks: [gt_net]
+
+volumes:
+  mysql_data:
+
+networks:
+  gt_net:
+    driver: bridge
